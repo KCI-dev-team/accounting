@@ -1,4 +1,5 @@
 import pandas as pd
+import os
 
 
 def extract_monthly_values(file_path, lookup_value):
@@ -12,18 +13,18 @@ def extract_monthly_values(file_path, lookup_value):
         if isinstance(row[1], str) and any(
             month in row[1].lower()
             for month in [
-                "Jan 2024",
-                "Feb 2024",
-                "Mar 2024",
-                "Apr 2024",
-                "May 2024",
-                "Jun 2024",
-                "Jul 2024",
-                "Aug 2024",
-                "Sep 2024",
-                "Oct 2024",
-                "Nov 2024",
-                "Dec 2024",
+                "jan",
+                "feb",
+                "mar",
+                "apr",
+                "may",
+                "jun",
+                "jul",
+                "aug",
+                "sep",
+                "oct",
+                "nov",
+                "dec",
             ]
         ):
             month_row = idx
@@ -58,7 +59,9 @@ def extract_monthly_values(file_path, lookup_value):
 
 
 if __name__ == "__main__":
-    file_path = "budget_actual/data/12_Month_Statement_mia139_Accrual (1).xlsx"
+    file_path = os.path.join(
+        "reo", "data", "12_Month_Statement_mia139_Accrual (1).xlsx"
+    )
     lookup_values = [
         "Mortgage Interest",
         "Preferred Interest",
@@ -76,7 +79,7 @@ if __name__ == "__main__":
         print(f"\n{key}:")
         print(value)
 
-    file_path = "budget_actual/data/12_Month_Statement_mia139_Accrual.xlsx"
+    file_path = os.path.join("reo", "data", "12_Month_Statement_mia139_Accrual.xlsx")
     lookup_values = ["EBITDA", "Interest Expense"]
 
     results = {}

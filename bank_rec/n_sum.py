@@ -192,6 +192,6 @@ if __name__ == "__main__":
         return formatted
 
     json_results = format_for_json(final_solutions_dp)
-    with open("matching_results_dp.json", "w") as f:
+    with open("data/matching_results_dp.json", "w") as f:
         json.dump(json_results, f, indent=2)
-    print("\nResults saved to 'matching_results_dp.json'")
+    print("\nResults saved to 'data/matching_results_dp.json'")

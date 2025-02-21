@@ -1,0 +1,338 @@
+{
+  "2025-01-02_-180000.0": {
+    "target_date": "2025-01-02",
+    "target_amount": -180000.0,
+    "matching_transactions": [
+      {
+        "date": "2025-01-02",
+        "amount": -180000.0,
+        "control": "J-422740"
+      }
+    ]
+  },
+  "2025-01-03_-80000.0": {
+    "target_date": "2025-01-03",
+    "target_amount": -80000.0,
+    "matching_transactions": [
+      {
+        "date": "2025-01-03",
+        "amount": -80000.0,
+        "control": "J-423189"
+      }
+    ]
+  },
+  "2025-01-06_-100000.0": {
+    "target_date": "2025-01-06",
+    "target_amount": -100000.0,
+    "matching_transactions": [
+      {
+        "date": "2025-01-06",
+        "amount": -100000.0,
+        "control": "J-423675"
+      }
+    ]
+  },
+  "2025-01-07_2000.0": {
+    "target_date": "2025-01-07",
+    "target_amount": 2000.0,
+    "matching_transactions": [
+      {
+        "date": "2025-01-07",
+        "amount": 2000.0,
+        "control": "R-1570620"
+      }
+    ]
+  },
+  "2025-01-09_-150000.0": {
+    "target_date": "2025-01-09",
+    "target_amount": -150000.0,
+    "matching_transactions": [
+      {
+        "date": "2025-01-09",
+        "amount": -150000.0,
+        "control": "J-425112"
+      }
+    ]
+  },
+  "2025-01-09_3150.0": {
+    "target_date": "2025-01-09",
+    "target_amount": 3150.0,
+    "matching_transactions": [
+      {
+        "date": "2025-01-06",
+        "amount": 3150.0,
+        "control": "R-1570244"
+      }
+    ]
+  },
+  "2025-01-14_5453.0": {
+    "target_date": "2025-01-14",
+    "target_amount": 5453.0,
+    "matching_transactions": [
+      {
+        "date": "2025-01-13",
+        "amount": 5453.0,
+        "control": "R-1571096"
+      }
+    ]
+  },
+  "2025-01-15_-180000.0": {
+    "target_date": "2025-01-15",
+    "target_amount": -180000.0,
+    "matching_transactions": [
+      {
+        "date": "2025-01-02",
+        "amount": -180000.0,
+        "control": "J-422740"
+      }
+    ]
+  },
+  "2025-01-17_1700.0": {
+    "target_date": "2025-01-17",
+    "target_amount": 1700.0,
+    "matching_transactions": [
+      {
+        "date": "2025-01-01",
+        "amount": 1700.0,
+        "control": "R-1567565"
+      }
+    ]
+  },
+  "2025-01-21_-5453.0": {
+    "target_date": "2025-01-21",
+    "target_amount": -5453.0,
+    "matching_transactions": [
+      {
+        "date": "2025-01-13",
+        "amount": -5453.0,
+        "control": "R-1571096"
+      }
+    ]
+  },
+  "2025-01-24_-5453.0": {
+    "target_date": "2025-01-24",
+    "target_amount": -5453.0,
+    "matching_transactions": [
+      {
+        "date": "2025-01-13",
+        "amount": -5453.0,
+        "control": "R-1571096"
+      }
+    ]
+  },
+  "2025-01-24_5453.0": {
+    "target_date": "2025-01-24",
+    "target_amount": 5453.0,
+    "matching_transactions": [
+      {
+        "date": "2025-01-13",
+        "amount": 5453.0,
+        "control": "R-1571096"
+      }
+    ]
+  },
+  "2025-01-27_-60000.0": {
+    "target_date": "2025-01-27",
+    "target_amount": -60000.0,
+    "matching_transactions": [
+      {
+        "date": "2025-01-27",
+        "amount": -60000.0,
+        "control": "J-428103"
+      }
+    ]
+  },
+  "2025-01-29_-5453.0": {
+    "target_date": "2025-01-29",
+    "target_amount": -5453.0,
+    "matching_transactions": [
+      {
+        "date": "2025-01-13",
+        "amount": -5453.0,
+        "control": "R-1571096"
+      }
+    ]
+  },
+  "2025-01-31_-2242.0": {
+    "target_date": "2025-01-31",
+    "target_amount": -2242.0,
+    "matching_transactions": [
+      {
+        "date": "2025-01-31",
+        "amount": -2242.0,
+        "control": "R-1573721"
+      }
+    ]
+  },
+  "2025-01-31_3690.0": {
+    "target_date": "2025-01-31",
+    "target_amount": 3690.0,
+    "matching_transactions": [
+      {
+        "date": "2025-01-27",
+        "amount": 3690.0,
+        "control": "R-1573100"
+      }
+    ]
+  },
+  "2025-01-06_3425.72": {
+    "target_date": "2025-01-06",
+    "target_amount": 3425.72,
+    "matching_transactions": [
+      {
+        "date": "2025-01-01",
+        "amount": 1196.72,
+        "control": "R-1566356"
+      },
+      {
+        "date": "2025-01-01",
+        "amount": 2229.0,
+        "control": "R-1567573"
+      }
+    ]
+  },
+  "2025-01-09_2353.0": {
+    "target_date": "2025-01-09",
+    "target_amount": 2353.0,
+    "matching_transactions": [
+      {
+        "date": "2025-01-06",
+        "amount": 85.0,
+        "control": "R-1570239"
+      },
+      {
+        "date": "2025-01-06",
+        "amount": 2268.0,
+        "control": "R-1570251"
+      }
+    ]
+  },
+  "2025-01-10_200.0": {
+    "target_date": "2025-01-10",
+    "target_amount": 200.0,
+    "matching_transactions": [
+      {
+        "date": "2025-01-01",
+        "amount": 100.0,
+        "control": "R-1567577"
+      },
+      {
+        "date": "2025-01-02",
+        "amount": 100.0,
+        "control": "R-1568612"
+      }
+    ]
+  },
+  "2025-01-13_2100.0": {
+    "target_date": "2025-01-13",
+    "target_amount": 2100.0,
+    "matching_transactions": [
+      {
+        "date": "2025-01-01",
+        "amount": 100.0,
+        "control": "R-1567577"
+      },
+      {
+        "date": "2025-01-07",
+        "amount": 2000.0,
+        "control": "R-1570726"
+      }
+    ]
+  },
+  "2025-01-15_90.38": {
+    "target_date": "2025-01-15",
+    "target_amount": 90.38,
+    "matching_transactions": [
+      {
+        "date": "2025-01-05",
+        "amount": 43.9,
+        "control": "R-1570080"
+      },
+      {
+        "date": "2025-01-02",
+        "amount": 46.48,
+        "control": "R-1568613"
+      }
+    ]
+  },
+  "2025-01-21_1596.29": {
+    "target_date": "2025-01-21",
+    "target_amount": 1596.29,
+    "matching_transactions": [
+      {
+        "date": "2025-01-02",
+        "amount": 38.29,
+        "control": "R-1569099"
+      },
+      {
+        "date": "2025-01-14",
+        "amount": 1558.0,
+        "control": "R-1571180"
+      }
+    ]
+  },
+  "2025-01-27_1834.6": {
+    "target_date": "2025-01-27",
+    "target_amount": 1834.6,
+    "matching_transactions": [
+      {
+        "date": "2025-01-01",
+        "amount": 11.21,
+        "control": "R-1567581"
+      },
+      {
+        "date": "2025-01-04",
+        "amount": 1823.39,
+        "control": "R-1569791"
+      }
+    ]
+  },
+  "2025-01-27_4756.21": {
+    "target_date": "2025-01-27",
+    "target_amount": 4756.21,
+    "matching_transactions": [
+      {
+        "date": "2025-01-21",
+        "amount": -500.0,
+        "control": "R-1571764"
+      },
+      {
+        "date": "2025-01-22",
+        "amount": 5256.21,
+        "control": "R-1571829"
+      }
+    ]
+  },
+  "2025-01-28_1611.96": {
+    "target_date": "2025-01-28",
+    "target_amount": 1611.96,
+    "matching_transactions": [
+      {
+        "date": "2025-01-05",
+        "amount": 53.96,
+        "control": "R-1570210"
+      },
+      {
+        "date": "2025-01-14",
+        "amount": 1558.0,
+        "control": "R-1571180"
+      }
+    ]
+  },
+  "2025-01-28_3716.0": {
+    "target_date": "2025-01-28",
+    "target_amount": 3716.0,
+    "matching_transactions": [
+      {
+        "date": "2025-01-14",
+        "amount": 995.0,
+        "control": "R-1571217"
+      },
+      {
+        "date": "2025-01-01",
+        "amount": 2721.0,
+        "control": "R-1567603"
+      }
+    ]
+  }
+}

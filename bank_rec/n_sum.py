@@ -1,6 +1,7 @@
 import pandas as pd
 import json
 from datetime import datetime
+import time
 
 
 def find_n_sum_dp(arr, target, n, start):
@@ -21,6 +22,7 @@ def find_n_sum_dp(arr, target, n, start):
 
     for i in range(start, len(arr)):
         amt_cents = int(round(arr[i][1] * 100))
+        transaction = arr[i]  # Now includes (date, amount, control)
         # iterate in reverse to avoid using the same transaction twice
         for count in range(n - 1, -1, -1):
             for s, comb in list(dp[count].items()):
@@ -28,7 +30,7 @@ def find_n_sum_dp(arr, target, n, start):
                 if new_sum > T:
                     continue
                 if new_sum not in dp[count + 1]:
-                    dp[count + 1][new_sum] = comb + [arr[i]]
+                    dp[count + 1][new_sum] = comb + [transaction]
     if T in dp[n]:
         return [dp[n][T]]
     return []
@@ -58,8 +60,14 @@ def get_n_sum_dp(gl, totals, n):
             result[(target_date, target_amount)] = []
             continue
 
-        # Create a list of (date, amount) and sort by amount
-        transactions = list(zip(valid_transactions["Date"], valid_transactions["Net"]))
+        # Create a list of (date, amount, control) and sort by amount
+        transactions = list(
+            zip(
+                valid_transactions["Date"],
+                valid_transactions["Net"],
+                valid_transactions["Control"],
+            )
+        )
         transactions.sort(key=lambda x: x[1])
 
         combination = find_n_sum_dp(transactions, target_amount, n, 0)
@@ -75,7 +83,7 @@ def find_all_n_sums_dp(gl, totals, max_n=10):
     Once a total amount is matched, it is removed from further consideration.
     """
     result = {}
-    used_transactions = set()  # Stores (date, amount) tuples already used
+    used_transactions = set()  # Stores (date, amount, control) tuples already used
     remaining_transactions = gl.copy()
     remaining_totals = totals.copy()
 
@@ -91,7 +99,9 @@ def find_all_n_sums_dp(gl, totals, max_n=10):
         if used_transactions:
             remaining_transactions = remaining_transactions[
                 ~remaining_transactions.apply(
-                    lambda row: (row["Date"], row["Net"]) in used_transactions, axis=1
+                    lambda row: (row["Date"], row["Net"], row["Control"])
+                    in used_transactions,
+                    axis=1,
                 )
             ]
 
@@ -121,57 +131,96 @@ def find_all_n_sums_dp(gl, totals, max_n=10):
     return result
 
 
-# --- Example usage and demonstration ---
+def process_files(gl_file, totals_file, max_n=2):
+    """
+    Process GL and totals files to find matching transactions.
 
-if __name__ == "__main__":
-    # Read CSV with explicit date parsing and data types
+    Args:
+        gl_file (str): Path to GL transactions CSV
+        totals_file (str): Path to totals CSV
+        max_n (int): Maximum number of transactions to combine
+
+    Returns:
+        tuple: (matched_solutions, unmatched_targets)
+    """
+    # Read and clean GL data
     gl = pd.read_csv(
-        "data/gl_deb.csv",
-        dtype={"Date": str},  # Read Date as string first
+        gl_file,
+        dtype={"Date": str},
         parse_dates=False,
-    )  # Don't auto-parse dates
-
-    # Clean the data before converting dates
+    )
     gl["Date"] = pd.to_datetime(gl["Date"], format="%m/%d/%Y", errors="coerce")
-    # Remove rows with invalid dates
     gl = gl.dropna(subset=["Date"])
-
-    # If any NaT (Not a Time) values appear, you can check which rows had parsing errors
-    if gl["Date"].isna().any():
-        print("Warning: Some dates could not be parsed:")
-        print(gl[gl["Date"].isna()]["Date"])
-
-    # Convert numeric columns to float, handling any commas in numbers
     gl["Debit"] = gl["Debit"].str.replace(",", "").astype(float)
     gl["Credit"] = gl["Credit"].str.replace(",", "").astype(float)
     gl["Net"] = gl["Net"].str.replace(",", "").astype(float)
 
+    # Read and clean totals data
     totals = pd.read_csv(
-        "data/ttls_deb.csv",
-        dtype={"Date": str},  # Read Date as string first
+        totals_file,
+        dtype={"Date": str},
         parse_dates=False,
     )
     totals["Date"] = pd.to_datetime(totals["Date"], format="%m/%d/%Y", errors="coerce")
     totals = totals.dropna(subset=["Date"])
     totals["Amount"] = totals["Amount"].replace(",", "").astype(float)
 
-    solutions_dp = find_all_n_sums_dp(gl, totals, max_n=3)
+    # Find solutions
+    start_time = time.time()
+    solutions_dp = find_all_n_sums_dp(gl, totals, max_n=max_n)
+    end_time = time.time()
+    print(f"Time taken: {end_time - start_time} seconds")
 
-    # Consolidate found solutions into one dictionary.
+    # Consolidate solutions
     final_solutions_dp = {}
     for n_solutions in solutions_dp.values():
         for key, trans in n_solutions.items():
             if trans:
                 final_solutions_dp[key] = trans
 
+    # Find unmatched targets
+    matched_targets = set(final_solutions_dp.keys())
+    all_targets = set(zip(totals["Date"], totals["Amount"]))
+    unmatched_targets = sorted(
+        all_targets - matched_targets, key=lambda x: (x[0], x[1])
+    )
+
+    return final_solutions_dp, unmatched_targets
+
+
+def print_results(matched_solutions, unmatched_targets):
+    """Print matched solutions and unmatched targets."""
     print("\nFound DP solutions:")
-    for (date, amount), trans in final_solutions_dp.items():
+    for (date, amount), trans in matched_solutions.items():
         print(f"\nTarget: {amount} on {date.date()}")
         print("Matching transactions:")
-        for trans_date, trans_amount in trans:
-            print(f"  {trans_amount} on {trans_date.date()}")
+        for trans_date, trans_amount, control in trans:
+            print(f"  {trans_amount} on {trans_date.date()} (Control: {control})")
 
-    # Format and save as JSON
+    print("\nUnmatched Targets:")
+    print("-" * 50)
+    print(f"{'Date':12} {'Amount':>12}")
+    print("-" * 50)
+    for date, amount in unmatched_targets:
+        print(f"{date.date()!s:12} {amount:>12.2f}")
+    print("-" * 50)
+    print(f"Total unmatched targets: {len(unmatched_targets)}")
+    print(
+        f"Total unmatched amount: ${sum(amount for _, amount in unmatched_targets):,.2f}"
+    )
+
+
+def save_results(matched_solutions, unmatched_targets, output_prefix, max_n):
+    """
+    Save results to JSON files.
+
+    Args:
+        matched_solutions (dict): Dictionary of matched solutions
+        unmatched_targets (list): List of unmatched targets
+        output_prefix (str): Prefix for output filenames
+        max_n (int): Maximum number of transactions combined
+    """
+
     def format_for_json(solutions_dict):
         formatted = {}
         for (date, amount), trans in solutions_dict.items():
@@ -181,8 +230,9 @@ if __name__ == "__main__":
                 {
                     "date": trans_date.strftime("%Y-%m-%d"),
                     "amount": float(trans_amount),
+                    "control": control,
                 }
-                for trans_date, trans_amount in trans
+                for trans_date, trans_amount, control in trans
             ]
             formatted[key] = {
                 "target_date": date_str,
@@ -191,7 +241,54 @@ if __name__ == "__main__":
             }
         return formatted
 
-    json_results = format_for_json(final_solutions_dp)
-    with open("data/matching_results_dp.json", "w") as f:
+    # Save matched solutions
+    json_results = format_for_json(matched_solutions)
+    matched_file = f"{output_prefix}_matched_dp_{max_n}.json"
+    with open(matched_file, "w") as f:
         json.dump(json_results, f, indent=2)
-    print("\nResults saved to 'data/matching_results_dp.json'")
+    print(f"\nMatched results saved to '{matched_file}'")
+
+    # Save unmatched targets
+    unmatched_file = f"{output_prefix}_unmatched_dp_{max_n}.json"
+    with open(unmatched_file, "w") as f:
+        json.dump(
+            [
+                {"date": date.strftime("%Y-%m-%d"), "amount": float(amount)}
+                for date, amount in unmatched_targets
+            ],
+            f,
+            indent=2,
+        )
+    print(f"Unmatched targets saved to '{unmatched_file}'")
+
+
+if __name__ == "__main__":
+    # # Example usage
+    # gl_file = "data/gl_deb.csv"
+    # totals_file = "data/ttls_deb.csv"
+    # max_n = 2
+    # output_prefix = "data/results"
+
+    # # Process files
+    # matched_solutions, unmatched_targets = process_files(gl_file, totals_file, max_n)
+
+    # # Print results
+    # print_results(matched_solutions, unmatched_targets)
+
+    # # Save results
+    # save_results(matched_solutions, unmatched_targets, output_prefix, max_n)
+
+    # Example usage
+    gl_file = "data/gl_op.csv"
+    totals_file = "data/ttls_op.csv"
+    max_n = 5
+    output_prefix = "data/results_op"
+
+    # Process files
+    matched_solutions, unmatched_targets = process_files(gl_file, totals_file, max_n)
+
+    # Print results
+    print_results(matched_solutions, unmatched_targets)
+
+    # Save results
+    save_results(matched_solutions, unmatched_targets, output_prefix, max_n)

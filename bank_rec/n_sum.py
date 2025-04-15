@@ -2,7 +2,7 @@ import pandas as pd
 import json
 from datetime import datetime
 import time
-
+import os
 
 def find_n_sum_dp(arr, target, n, start):
     """
@@ -24,6 +24,8 @@ def find_n_sum_dp(arr, target, n, start):
         amt_cents = int(round(arr[i][1] * 100))
         transaction = arr[i]  # Now includes (date, amount, control)
         # iterate in reverse to avoid using the same transaction twice
+        if amt_cents == 613800 or T == 613800:
+            print(amt_cents, T)
         for count in range(n - 1, -1, -1):
             for s, comb in list(dp[count].items()):
                 new_sum = s + amt_cents
@@ -55,7 +57,7 @@ def get_n_sum_dp(gl, totals, n):
                 f"Processing target {i}/{total_targets}: {target_amount} on {target_date.date()}"
             )
 
-        valid_transactions = gl[gl["Date"] <= target_date].copy()
+        valid_transactions = gl.copy()
         if len(valid_transactions) < n:
             result[(target_date, target_amount)] = []
             continue
@@ -131,9 +133,11 @@ def find_all_n_sums_dp(gl, totals, max_n=10):
     return result
 
 
-def process_files(gl_file, totals_file, max_n=2):
+def process_files_bidirectional(gl_file, totals_file, max_n=10):
     """
-    Process GL and totals files to find matching transactions.
+    Process GL and totals files to find matching transactions in both directions:
+    1. First match GL transactions to totals (normal mode)
+    2. Then match remaining totals to remaining GL transactions (reverse mode)
 
     Args:
         gl_file (str): Path to GL transactions CSV
@@ -141,7 +145,7 @@ def process_files(gl_file, totals_file, max_n=2):
         max_n (int): Maximum number of transactions to combine
 
     Returns:
-        tuple: (matched_solutions, unmatched_targets)
+        tuple: (normal_solutions, reverse_solutions, unmatched_totals)
     """
     # Read and clean GL data
     gl = pd.read_csv(
@@ -151,9 +155,11 @@ def process_files(gl_file, totals_file, max_n=2):
     )
     gl["Date"] = pd.to_datetime(gl["Date"], format="%m/%d/%Y", errors="coerce")
     gl = gl.dropna(subset=["Date"])
-    gl["Debit"] = gl["Debit"].str.replace(",", "").astype(float)
-    gl["Credit"] = gl["Credit"].str.replace(",", "").astype(float)
-    gl["Net"] = gl["Net"].str.replace(",", "").astype(float)
+
+    if type(gl["Debit"]) == str:
+        gl["Debit"] = gl["Debit"].str.replace(",", "").astype(float)
+        gl["Credit"] = gl["Credit"].str.replace(",", "").astype(float)
+        gl["Net"] = gl["Net"].str.replace(",", "").astype(float)
 
     # Read and clean totals data
     totals = pd.read_csv(
@@ -165,130 +171,230 @@ def process_files(gl_file, totals_file, max_n=2):
     totals = totals.dropna(subset=["Date"])
     totals["Amount"] = totals["Amount"].replace(",", "").astype(float)
 
-    # Find solutions
-    start_time = time.time()
-    solutions_dp = find_all_n_sums_dp(gl, totals, max_n=max_n)
-    end_time = time.time()
-    print(f"Time taken: {end_time - start_time} seconds")
+    # Save original copies for reference
+    original_gl = gl.copy()
+    original_totals = totals.copy()
 
-    # Consolidate solutions
-    final_solutions_dp = {}
-    for n_solutions in solutions_dp.values():
+    # PHASE 1: Normal mode - GL transactions matching to totals
+    print("\n=== NORMAL MODE: GL entries matching to totals ===")
+    print(f"Total targets to match: {len(totals)}")
+    print(f"Total GL entries available: {len(gl)}")
+    
+    start_time = time.time()
+    normal_solutions_dp = find_all_n_sums_dp(gl, totals, max_n=max_n)
+    end_time = time.time()
+    print(f"Time taken for normal mode: {end_time - start_time} seconds")
+
+    # Consolidate normal solutions
+    normal_final_solutions = {}
+    for n_solutions in normal_solutions_dp.values():
         for key, trans in n_solutions.items():
             if trans:
-                final_solutions_dp[key] = trans
+                normal_final_solutions[key] = trans
 
-    # Find unmatched targets
-    matched_targets = set(final_solutions_dp.keys())
-    all_targets = set(zip(totals["Date"], totals["Amount"]))
-    unmatched_targets = sorted(
-        all_targets - matched_targets, key=lambda x: (x[0], x[1])
+    # Get remaining transactions and totals after normal mode
+    used_gl_controls = set()
+    for _, trans_list in normal_final_solutions.items():
+        if trans_list:
+            for _, _, control in trans_list:
+                used_gl_controls.add(control)
+    
+    remaining_gl = original_gl[~original_gl["Control"].isin(used_gl_controls)]
+    
+    matched_totals_keys = set(normal_final_solutions.keys())
+    remaining_totals = original_totals[~original_totals.apply(
+        lambda row: (row["Date"], row["Amount"]) in matched_totals_keys, axis=1
+    )]
+    
+    print(f"\nAfter normal mode:")
+    print(f"Matched {len(matched_totals_keys)} totals")
+    print(f"Used {len(used_gl_controls)} GL transactions")
+    print(f"Remaining totals: {len(remaining_totals)}")
+    print(f"Remaining GL transactions: {len(remaining_gl)}")
+
+    # PHASE 2: Reverse mode - remaining totals matching to remaining GL transactions
+    print("\n=== REVERSE MODE: Remaining totals matching to remaining GL entries ===")
+    
+    # Prepare dataframes for reverse mode
+    reverse_gl = remaining_totals.copy()
+    reverse_gl = reverse_gl.rename(columns={"Amount": "Net"})
+    if "Control" not in reverse_gl.columns:
+        reverse_gl["Control"] = reverse_gl.index
+    
+    reverse_totals = remaining_gl.copy()
+    reverse_totals = reverse_totals.rename(columns={"Net": "Amount"})
+    
+    start_time = time.time()
+    reverse_solutions_dp = find_all_n_sums_dp(reverse_gl, reverse_totals, max_n=max_n)
+    end_time = time.time()
+    print(f"Time taken for reverse mode: {end_time - start_time} seconds")
+
+    # Consolidate reverse solutions
+    reverse_final_solutions = {}
+    for n_solutions in reverse_solutions_dp.values():
+        for key, trans in n_solutions.items():
+            if trans:
+                reverse_final_solutions[key] = trans
+    
+    # Get final unmatched totals
+    matched_in_reverse = set()
+    for key, trans_list in reverse_final_solutions.items():
+        if trans_list:
+            # In reverse mode, the key is a GL transaction that was matched
+            matched_in_reverse.add(key)
+    
+    # Get totals that weren't matched in either normal or reverse mode
+    all_totals_keys = set(zip(original_totals["Date"], original_totals["Amount"]))
+    matched_totals_keys = matched_totals_keys.union(
+        {(date, amount) for date, amount, _ in 
+         [item for sublist in reverse_final_solutions.values() if sublist 
+          for item in sublist]}
     )
+    unmatched_totals = sorted(
+        all_totals_keys - matched_totals_keys, key=lambda x: (x[0], x[1])
+    )
+    
+    print(f"\nAfter reverse mode:")
+    print(f"Matched an additional {len(reverse_final_solutions)} GL transactions")
+    print(f"Final unmatched totals: {len(unmatched_totals)}")
+    
+    return normal_final_solutions, reverse_final_solutions, unmatched_totals
 
-    return final_solutions_dp, unmatched_targets
 
-
-def print_results(matched_solutions, unmatched_targets):
-    """Print matched solutions and unmatched targets."""
-    print("\nFound DP solutions:")
-    for (date, amount), trans in matched_solutions.items():
-        print(f"\nTarget: {amount} on {date.date()}")
-        print("Matching transactions:")
+def print_bidirectional_results(normal_solutions, reverse_solutions, unmatched_totals):
+    """Print results from bidirectional matching."""
+    # Print normal mode results
+    print("\n=== NORMAL MODE RESULTS ===")
+    print(f"Found {len(normal_solutions)} matches where GL transactions sum to totals")
+    for (date, amount), trans in normal_solutions.items():
+        print(f"\nTarget: {amount} on {date.date()} (from totals file)")
+        print(f"Matching transactions from GL file:")
         for trans_date, trans_amount, control in trans:
             print(f"  {trans_amount} on {trans_date.date()} (Control: {control})")
-
-    print("\nUnmatched Targets:")
+    
+    # Print reverse mode results
+    print("\n=== REVERSE MODE RESULTS ===")
+    print(f"Found {len(reverse_solutions)} matches where totals sum to GL transactions")
+    for (date, amount), trans in reverse_solutions.items():
+        print(f"\nTarget: {amount} on {date.date()} (from GL file)")
+        print(f"Matching transactions from totals file:")
+        for trans_date, trans_amount, control in trans:
+            print(f"  {trans_amount} on {trans_date.date()} (Control: {control})")
+    
+    # Print unmatched totals
+    print("\n=== UNMATCHED TOTALS ===")
     print("-" * 50)
     print(f"{'Date':12} {'Amount':>12}")
     print("-" * 50)
-    for date, amount in unmatched_targets:
+    for date, amount in unmatched_totals:
         print(f"{date.date()!s:12} {amount:>12.2f}")
     print("-" * 50)
-    print(f"Total unmatched targets: {len(unmatched_targets)}")
+    print(f"Total unmatched totals: {len(unmatched_totals)}")
     print(
-        f"Total unmatched amount: ${sum(amount for _, amount in unmatched_targets):,.2f}"
+        f"Total unmatched amount: ${sum(amount for _, amount in unmatched_totals):,.2f}"
     )
 
 
-def save_results(matched_solutions, unmatched_targets, output_prefix, max_n):
+def save_bidirectional_results(normal_solutions, reverse_solutions, unmatched_totals, 
+                              output_prefix, max_n, gl_file, totals_file):
     """
-    Save results to JSON files.
-
+    Save results from bidirectional matching to JSON files.
+    
     Args:
-        matched_solutions (dict): Dictionary of matched solutions
-        unmatched_targets (list): List of unmatched targets
+        normal_solutions (dict): Solutions from normal mode
+        reverse_solutions (dict): Solutions from reverse mode
+        unmatched_totals (list): Unmatched totals
         output_prefix (str): Prefix for output filenames
         max_n (int): Maximum number of transactions combined
+        gl_file (str): Path to the GL file used
+        totals_file (str): Path to the totals file used
     """
-
-    def format_for_json(solutions_dict):
-        formatted = {}
-        for (date, amount), trans in solutions_dict.items():
-            date_str = date.strftime("%Y-%m-%d")
-            key = f"{date_str}_{amount}"
-            formatted_transactions = [
-                {
-                    "date": trans_date.strftime("%Y-%m-%d"),
-                    "amount": float(trans_amount),
-                    "control": control,
-                }
-                for trans_date, trans_amount, control in trans
-            ]
-            formatted[key] = {
-                "target_date": date_str,
-                "target_amount": float(amount),
-                "matching_transactions": formatted_transactions,
+    # Format normal mode solutions for JSON
+    normal_formatted = {}
+    for (date, amount), trans in normal_solutions.items():
+        date_str = date.strftime("%Y-%m-%d")
+        key = f"{date_str}_{amount}"
+        formatted_transactions = [
+            {
+                "date": trans_date.strftime("%Y-%m-%d"),
+                "amount": float(trans_amount),
+                "control": control,
             }
-        return formatted
-
-    # Save matched solutions
-    json_results = format_for_json(matched_solutions)
-    matched_file = f"{output_prefix}_matched_dp_{max_n}.json"
+            for trans_date, trans_amount, control in trans
+        ]
+        normal_formatted[key] = {
+            "target_date": date_str,
+            "target_amount": float(amount),
+            "target_source": totals_file,
+            "matching_transactions": formatted_transactions,
+            "transactions_source": gl_file
+        }
+    
+    # Format reverse mode solutions for JSON
+    reverse_formatted = {}
+    for (date, amount), trans in reverse_solutions.items():
+        date_str = date.strftime("%Y-%m-%d")
+        key = f"{date_str}_{amount}"
+        formatted_transactions = [
+            {
+                "date": trans_date.strftime("%Y-%m-%d"),
+                "amount": float(trans_amount),
+                "control": control,
+            }
+            for trans_date, trans_amount, control in trans
+        ]
+        reverse_formatted[key] = {
+            "target_date": date_str,
+            "target_amount": float(amount),
+            "target_source": gl_file,
+            "matching_transactions": formatted_transactions,
+            "transactions_source": totals_file
+        }
+    
+    # Combine both sets of solutions
+    combined_solutions = {**normal_formatted, **reverse_formatted}
+    
+    # Save combined solutions
+    matched_file = f"{output_prefix}_matched_dp_{max_n}_bidirectional.json"
     with open(matched_file, "w") as f:
-        json.dump(json_results, f, indent=2)
-    print(f"\nMatched results saved to '{matched_file}'")
-
-    # Save unmatched targets
-    unmatched_file = f"{output_prefix}_unmatched_dp_{max_n}.json"
+        json.dump(combined_solutions, f, indent=2)
+    print(f"\nCombined matched results saved to '{matched_file}'")
+    
+    # Save unmatched totals
+    unmatched_file = f"{output_prefix}_unmatched_totals_dp_{max_n}.json"
     with open(unmatched_file, "w") as f:
         json.dump(
             [
-                {"date": date.strftime("%Y-%m-%d"), "amount": float(amount)}
-                for date, amount in unmatched_targets
+                {
+                    "date": date.strftime("%Y-%m-%d"), 
+                    "amount": float(amount),
+                    "source": totals_file
+                }
+                for date, amount in unmatched_totals
             ],
             f,
             indent=2,
         )
-    print(f"Unmatched targets saved to '{unmatched_file}'")
+    print(f"Unmatched totals saved to '{unmatched_file}'")
 
 
 if __name__ == "__main__":
-    # # Example usage
-    # gl_file = "data/gl_deb.csv"
-    # totals_file = "data/ttls_deb.csv"
-    # max_n = 2
-    # output_prefix = "data/results"
-
-    # # Process files
-    # matched_solutions, unmatched_targets = process_files(gl_file, totals_file, max_n)
-
-    # # Print results
-    # print_results(matched_solutions, unmatched_targets)
-
-    # # Save results
-    # save_results(matched_solutions, unmatched_targets, output_prefix, max_n)
-
     # Example usage
-    gl_file = "data/gl_op.csv"
-    totals_file = "data/ttls_op.csv"
-    max_n = 5
-    output_prefix = "data/results_op"
+    gl_file = os.path.join("data", "gl_new.csv")
+    totals_file = os.path.join("data", "ttl_new.csv")
+    max_n = 10
+    output_prefix = os.path.join("data", "results_new")
 
-    # Process files
-    matched_solutions, unmatched_targets = process_files(gl_file, totals_file, max_n)
-
+    # Process files in both directions
+    normal_solutions, reverse_solutions, unmatched_totals = process_files_bidirectional(
+        gl_file, totals_file, max_n
+    )
+    
     # Print results
-    print_results(matched_solutions, unmatched_targets)
-
+    print_bidirectional_results(normal_solutions, reverse_solutions, unmatched_totals)
+    
     # Save results
-    save_results(matched_solutions, unmatched_targets, output_prefix, max_n)
+    save_bidirectional_results(
+        normal_solutions, reverse_solutions, unmatched_totals,
+        output_prefix, max_n, gl_file, totals_file
+    )

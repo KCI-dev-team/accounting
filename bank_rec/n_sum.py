@@ -24,8 +24,6 @@ def find_n_sum_dp(arr, target, n, start):
         amt_cents = int(round(arr[i][1] * 100))
         transaction = arr[i]  # Now includes (date, amount, control)
         # iterate in reverse to avoid using the same transaction twice
-        if amt_cents == 613800 or T == 613800:
-            print(amt_cents, T)
         for count in range(n - 1, -1, -1):
             for s, comb in list(dp[count].items()):
                 new_sum = s + amt_cents
@@ -57,6 +55,10 @@ def get_n_sum_dp(gl, totals, n):
                 f"Processing target {i}/{total_targets}: {target_amount} on {target_date.date()}"
             )
 
+        # valid_transactions = gl[
+        #     (gl["Date"] >= target_date - pd.Timedelta(days=5)) & 
+        #     (gl["Date"] <= target_date + pd.Timedelta(days=5))
+        # ].copy()
         valid_transactions = gl.copy()
         if len(valid_transactions) < n:
             result[(target_date, target_amount)] = []
@@ -133,19 +135,55 @@ def find_all_n_sums_dp(gl, totals, max_n=10):
     return result
 
 
+def find_voided_totals(unmatched_totals, max_n=5):
+    """
+    Find combinations of unmatched totals that sum to 0.
+    Args:
+        unmatched_totals: List of (date, amount) tuples
+        max_n: Maximum number of transactions to combine
+    Returns:
+        List of lists, where each inner list contains (date, amount) tuples that sum to 0
+    """
+    voided_groups = []
+    remaining_totals = set(unmatched_totals)
+    
+    def find_zero_sums(target_sum, items, current_combo, start_idx, n):
+        if n == 0:
+            if abs(target_sum) < 0.01:  # Account for floating point precision
+                voided_groups.append(current_combo[:])
+            return
+        
+        for i in range(start_idx, len(items)):
+            current_combo.append(items[i])
+            find_zero_sums(target_sum + items[i][1], items, current_combo, i + 1, n - 1)
+            current_combo.pop()
+    
+    # Convert to list for indexing
+    totals_list = list(unmatched_totals)
+    
+    # Try combinations of different sizes
+    for n in range(2, max_n + 1):
+        find_zero_sums(0, totals_list, [], 0, n)
+    
+    # Remove overlapping groups (prefer smaller groups)
+    final_groups = []
+    used_totals = set()
+    
+    # Sort groups by size and then by date
+    voided_groups.sort(key=lambda x: (len(x), x[0][0]))
+    
+    for group in voided_groups:
+        if not any(total in used_totals for total in group):
+            final_groups.append(group)
+            used_totals.update(group)
+    
+    return final_groups
+
+
 def process_files_bidirectional(gl_file, totals_file, max_n=10):
     """
-    Process GL and totals files to find matching transactions in both directions:
-    1. First match GL transactions to totals (normal mode)
-    2. Then match remaining totals to remaining GL transactions (reverse mode)
-
-    Args:
-        gl_file (str): Path to GL transactions CSV
-        totals_file (str): Path to totals CSV
-        max_n (int): Maximum number of transactions to combine
-
-    Returns:
-        tuple: (normal_solutions, reverse_solutions, unmatched_totals)
+    Process GL and totals files to find matching transactions in both directions.
+    Returns unmatched items from both GL and totals.
     """
     # Read and clean GL data
     gl = pd.read_csv(
@@ -236,12 +274,14 @@ def process_files_bidirectional(gl_file, totals_file, max_n=10):
             if trans:
                 reverse_final_solutions[key] = trans
     
-    # Get final unmatched totals
+    # Get final unmatched totals and GL items
     matched_in_reverse = set()
+    matched_gl_in_reverse = set()  # Store the actual GL transactions matched in reverse
     for key, trans_list in reverse_final_solutions.items():
         if trans_list:
-            # In reverse mode, the key is a GL transaction that was matched
             matched_in_reverse.add(key)
+            for t in trans_list:
+                matched_gl_in_reverse.add((t[0], t[1], t[2]))  # date, amount, control
     
     # Get totals that weren't matched in either normal or reverse mode
     all_totals_keys = set(zip(original_totals["Date"], original_totals["Amount"]))
@@ -254,14 +294,48 @@ def process_files_bidirectional(gl_file, totals_file, max_n=10):
         all_totals_keys - matched_totals_keys, key=lambda x: (x[0], x[1])
     )
     
+    # Get GL transactions that weren't matched in either mode
+    all_gl_keys = set(zip(original_gl["Date"], original_gl["Net"], original_gl["Control"]))
+    matched_gl_keys = set()
+    
+    # Add GL transactions matched in normal mode
+    for trans_list in normal_final_solutions.values():
+        if trans_list:
+            matched_gl_keys.update(tuple(t) for t in trans_list)
+    
+    # Add GL transactions matched as targets in reverse mode
+    matched_gl_keys.update(matched_gl_in_reverse)
+    
+    unmatched_gl = sorted(
+        all_gl_keys - matched_gl_keys, 
+        key=lambda x: (x[0], x[1])
+    )
+    
     print(f"\nAfter reverse mode:")
     print(f"Matched an additional {len(reverse_final_solutions)} GL transactions")
     print(f"Final unmatched totals: {len(unmatched_totals)}")
+    print(f"Final unmatched GL entries: {len(unmatched_gl)}")
     
-    return normal_final_solutions, reverse_final_solutions, unmatched_totals
+    # Find voided transactions in unmatched totals
+    voided_groups = find_voided_totals(unmatched_totals, max_n=5)
+    
+    # Remove voided transactions from unmatched_totals
+    voided_totals = set()
+    for group in voided_groups:
+        voided_totals.update(group)
+    
+    unmatched_totals = sorted(
+        set(unmatched_totals) - voided_totals,
+        key=lambda x: (x[0], x[1])
+    )
+    
+    print(f"Found {len(voided_groups)} groups of voided transactions")
+    print(f"Final unmatched totals after removing voided: {len(unmatched_totals)}")
+    
+    return normal_final_solutions, reverse_final_solutions, unmatched_totals, unmatched_gl, voided_groups
 
 
-def print_bidirectional_results(normal_solutions, reverse_solutions, unmatched_totals):
+def print_bidirectional_results(normal_solutions, reverse_solutions, unmatched_totals, unmatched_gl, voided_groups):
     """Print results from bidirectional matching."""
     # Print normal mode results
     print("\n=== NORMAL MODE RESULTS ===")
@@ -290,13 +364,35 @@ def print_bidirectional_results(normal_solutions, reverse_solutions, unmatched_t
         print(f"{date.date()!s:12} {amount:>12.2f}")
     print("-" * 50)
     print(f"Total unmatched totals: {len(unmatched_totals)}")
-    print(
-        f"Total unmatched amount: ${sum(amount for _, amount in unmatched_totals):,.2f}"
-    )
+    print(f"Total unmatched amount: ${sum(amount for _, amount in unmatched_totals):,.2f}")
+
+    # Print unmatched GL entries
+    print("\n=== UNMATCHED GL ENTRIES ===")
+    print("-" * 70)
+    print(f"{'Date':12} {'Amount':>12} {'Control':>12}")
+    print("-" * 70)
+    for date, amount, control in unmatched_gl:
+        print(f"{date.date()!s:12} {amount:>12.2f} {control:>12}")
+    print("-" * 70)
+    print(f"Total unmatched GL entries: {len(unmatched_gl)}")
+    print(f"Total unmatched amount: ${sum(amount for _, amount, _ in unmatched_gl):,.2f}")
+
+    # Print voided totals groups
+    print("\n=== VOIDED TOTALS GROUPS ===")
+    print(f"Found {len(voided_groups)} groups of transactions that sum to 0")
+    for i, group in enumerate(voided_groups, 1):
+        print(f"\nGroup {i}:")
+        print("-" * 50)
+        print(f"{'Date':12} {'Amount':>12}")
+        print("-" * 50)
+        for date, amount in group:
+            print(f"{date.date()!s:12} {amount:>12.2f}")
+        print("-" * 50)
+        print(f"Sum: ${sum(amount for _, amount in group):,.2f}")
 
 
-def save_bidirectional_results(normal_solutions, reverse_solutions, unmatched_totals, 
-                              output_prefix, max_n, gl_file, totals_file):
+def save_bidirectional_results(normal_solutions, reverse_solutions, unmatched_totals, unmatched_gl, 
+                             voided_groups, output_prefix, max_n, gl_file, totals_file):
     """
     Save results from bidirectional matching to JSON files.
     
@@ -304,6 +400,8 @@ def save_bidirectional_results(normal_solutions, reverse_solutions, unmatched_to
         normal_solutions (dict): Solutions from normal mode
         reverse_solutions (dict): Solutions from reverse mode
         unmatched_totals (list): Unmatched totals
+        unmatched_gl (list): Unmatched GL transactions
+        voided_groups (list): Voided totals groups
         output_prefix (str): Prefix for output filenames
         max_n (int): Maximum number of transactions combined
         gl_file (str): Path to the GL file used
@@ -377,24 +475,64 @@ def save_bidirectional_results(normal_solutions, reverse_solutions, unmatched_to
         )
     print(f"Unmatched totals saved to '{unmatched_file}'")
 
+    # Save unmatched GL entries
+    unmatched_gl_file = f"{output_prefix}_unmatched_gl_dp_{max_n}.json"
+    with open(unmatched_gl_file, "w") as f:
+        json.dump(
+            [
+                {
+                    "date": date.strftime("%Y-%m-%d"),
+                    "amount": float(amount),
+                    "control": control,
+                }
+                for date, amount, control in unmatched_gl
+            ],
+            f,
+            indent=2,
+        )
+    print(f"Unmatched GL entries saved to '{unmatched_gl_file}'")
+
+    # Save voided totals groups
+    voided_file = f"{output_prefix}_voided_totals_dp_{max_n}.json"
+    voided_formatted = []
+    for group in voided_groups:
+        group_data = {
+            "transactions": [
+                {
+                    "date": date.strftime("%Y-%m-%d"),
+                    "amount": float(amount),
+                    "source": totals_file
+                }
+                for date, amount in group
+            ],
+            "sum": sum(amount for _, amount in group)
+        }
+        voided_formatted.append(group_data)
+    
+    with open(voided_file, "w") as f:
+        json.dump(voided_formatted, f, indent=2)
+    print(f"Voided totals groups saved to '{voided_file}'")
+
 
 if __name__ == "__main__":
     # Example usage
     gl_file = os.path.join("data", "gl_new.csv")
     totals_file = os.path.join("data", "ttl_new.csv")
     max_n = 10
-    output_prefix = os.path.join("data", "results_new")
+    output_prefix = os.path.join("data", "results_new_w_voids")
 
     # Process files in both directions
-    normal_solutions, reverse_solutions, unmatched_totals = process_files_bidirectional(
+    normal_solutions, reverse_solutions, unmatched_totals, unmatched_gl, voided_groups = process_files_bidirectional(
         gl_file, totals_file, max_n
     )
     
     # Print results
-    print_bidirectional_results(normal_solutions, reverse_solutions, unmatched_totals)
+    print_bidirectional_results(
+        normal_solutions, reverse_solutions, unmatched_totals, unmatched_gl, voided_groups
+    )
     
     # Save results
     save_bidirectional_results(
-        normal_solutions, reverse_solutions, unmatched_totals,
+        normal_solutions, reverse_solutions, unmatched_totals, unmatched_gl, voided_groups,
         output_prefix, max_n, gl_file, totals_file
     )

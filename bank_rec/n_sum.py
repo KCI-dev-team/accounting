@@ -4,6 +4,49 @@ from datetime import datetime
 import time
 import os
 
+def parse_csv(file_path: str, file_type: str) -> pd.DataFrame:
+    """
+    Parse CSV files for bank reconciliation, standardizing the format.
+    
+    Args:
+        file_path (str): Path to the CSV file
+        file_type (str): Either "GL" or "Bank" to indicate file type
+    
+    Returns:
+        pd.DataFrame: Standardized DataFrame with required columns
+    """
+    if file_type not in ["GL", "Bank"]:
+        raise ValueError("file_type must be either 'GL' or 'Bank'")
+
+    # Read CSV and clean column names
+    df = pd.read_csv(file_path)
+    df.columns = df.columns.str.strip()
+
+    if file_type == "GL":
+        df = df.rename(columns={"Npostid": "Control", "Postdate": "Date"})
+        # The date is already in the Date column in format "2/3/2025 0:00"
+        df["Date"] = pd.to_datetime(df["Date"], format="%m/%d/%Y %H:%M", errors="coerce").dt.date
+
+        
+        # Calculate Net amount (Debit - Credit)
+        df["Net"] = df["Debit"] + df["Credit"]
+        # Select final columns
+        return df[["Date", "Net", "Control"]]
+
+    else:  # Bank
+        # Standardize date format
+        df["Date"] = pd.to_datetime(df["Date"], format="%m/%d/%Y", errors="coerce").dt.date
+        
+        # Select and rename required columns
+        if "Amount" not in df.columns:
+            raise ValueError("Bank file must have an 'Amount' column")
+        
+        # Convert amount to float
+        df["Amount"] = df["Amount"].str.replace(",", "").astype(float)
+        # Select final columns
+        return df[["Date", "Amount"]]
+
+
 def find_n_sum_dp(arr, target, n, start):
     """
     Find a combination of exactly n transactions from arr (list of (date, amount))
@@ -52,7 +95,7 @@ def get_n_sum_dp(gl, totals, n):
     ):
         if i % 10 == 0:
             print(
-                f"Processing target {i}/{total_targets}: {target_amount} on {target_date.date()}"
+                f"Processing target {i}/{total_targets}: {target_amount} on {target_date}"
             )
 
         # valid_transactions = gl[
@@ -180,46 +223,27 @@ def find_voided_totals(unmatched_totals, max_n=5):
     return final_groups
 
 
-def process_files_bidirectional(gl_file, totals_file, max_n=10):
+def process_files_bidirectional(gl_df: pd.DataFrame, totals_df: pd.DataFrame, max_n=10):
     """
-    Process GL and totals files to find matching transactions in both directions.
+    Process GL and totals DataFrames to find matching transactions in both directions.
     Returns unmatched items from both GL and totals.
+    
+    Args:
+        gl_df (pd.DataFrame): GL transactions with Date, Net, and Control columns
+        totals_df (pd.DataFrame): Bank totals with Date and Amount columns
+        max_n (int): Maximum number of transactions to combine
     """
-    # Read and clean GL data
-    gl = pd.read_csv(
-        gl_file,
-        dtype={"Date": str},
-        parse_dates=False,
-    )
-    gl["Date"] = pd.to_datetime(gl["Date"], format="%m/%d/%Y", errors="coerce")
-    gl = gl.dropna(subset=["Date"])
-
-    if type(gl["Debit"]) == str:
-        gl["Debit"] = gl["Debit"].str.replace(",", "").astype(float)
-        gl["Credit"] = gl["Credit"].str.replace(",", "").astype(float)
-        gl["Net"] = gl["Net"].str.replace(",", "").astype(float)
-
-    # Read and clean totals data
-    totals = pd.read_csv(
-        totals_file,
-        dtype={"Date": str},
-        parse_dates=False,
-    )
-    totals["Date"] = pd.to_datetime(totals["Date"], format="%m/%d/%Y", errors="coerce")
-    totals = totals.dropna(subset=["Date"])
-    totals["Amount"] = totals["Amount"].replace(",", "").astype(float)
-
     # Save original copies for reference
-    original_gl = gl.copy()
-    original_totals = totals.copy()
+    original_gl = gl_df.copy()
+    original_totals = totals_df.copy()
 
     # PHASE 1: Normal mode - GL transactions matching to totals
     print("\n=== NORMAL MODE: GL entries matching to totals ===")
-    print(f"Total targets to match: {len(totals)}")
-    print(f"Total GL entries available: {len(gl)}")
+    print(f"Total targets to match: {len(totals_df)}")
+    print(f"Total GL entries available: {len(gl_df)}")
     
     start_time = time.time()
-    normal_solutions_dp = find_all_n_sums_dp(gl, totals, max_n=max_n)
+    normal_solutions_dp = find_all_n_sums_dp(gl_df, totals_df, max_n=max_n)
     end_time = time.time()
     print(f"Time taken for normal mode: {end_time - start_time} seconds")
 
@@ -341,19 +365,19 @@ def print_bidirectional_results(normal_solutions, reverse_solutions, unmatched_t
     print("\n=== NORMAL MODE RESULTS ===")
     print(f"Found {len(normal_solutions)} matches where GL transactions sum to totals")
     for (date, amount), trans in normal_solutions.items():
-        print(f"\nTarget: {amount} on {date.date()} (from totals file)")
+        print(f"\nTarget: {amount} on {date} (from totals file)")
         print(f"Matching transactions from GL file:")
         for trans_date, trans_amount, control in trans:
-            print(f"  {trans_amount} on {trans_date.date()} (Control: {control})")
+            print(f"  {trans_amount} on {trans_date} (Control: {control})")
     
     # Print reverse mode results
     print("\n=== REVERSE MODE RESULTS ===")
     print(f"Found {len(reverse_solutions)} matches where totals sum to GL transactions")
     for (date, amount), trans in reverse_solutions.items():
-        print(f"\nTarget: {amount} on {date.date()} (from GL file)")
+        print(f"\nTarget: {amount} on {date} (from GL file)")
         print(f"Matching transactions from totals file:")
         for trans_date, trans_amount, control in trans:
-            print(f"  {trans_amount} on {trans_date.date()} (Control: {control})")
+            print(f"  {trans_amount} on {trans_date} (Control: {control})")
     
     # Print unmatched totals
     print("\n=== UNMATCHED TOTALS ===")
@@ -361,7 +385,7 @@ def print_bidirectional_results(normal_solutions, reverse_solutions, unmatched_t
     print(f"{'Date':12} {'Amount':>12}")
     print("-" * 50)
     for date, amount in unmatched_totals:
-        print(f"{date.date()!s:12} {amount:>12.2f}")
+        print(f"{date!s:12} {amount:>12.2f}")
     print("-" * 50)
     print(f"Total unmatched totals: {len(unmatched_totals)}")
     print(f"Total unmatched amount: ${sum(amount for _, amount in unmatched_totals):,.2f}")
@@ -372,7 +396,7 @@ def print_bidirectional_results(normal_solutions, reverse_solutions, unmatched_t
     print(f"{'Date':12} {'Amount':>12} {'Control':>12}")
     print("-" * 70)
     for date, amount, control in unmatched_gl:
-        print(f"{date.date()!s:12} {amount:>12.2f} {control:>12}")
+        print(f"{date!s:12} {amount:>12.2f} {control:>12}")
     print("-" * 70)
     print(f"Total unmatched GL entries: {len(unmatched_gl)}")
     print(f"Total unmatched amount: ${sum(amount for _, amount, _ in unmatched_gl):,.2f}")
@@ -386,7 +410,7 @@ def print_bidirectional_results(normal_solutions, reverse_solutions, unmatched_t
         print(f"{'Date':12} {'Amount':>12}")
         print("-" * 50)
         for date, amount in group:
-            print(f"{date.date()!s:12} {amount:>12.2f}")
+            print(f"{date!s:12} {amount:>12.2f}")
         print("-" * 50)
         print(f"Sum: ${sum(amount for _, amount in group):,.2f}")
 
@@ -516,14 +540,18 @@ def save_bidirectional_results(normal_solutions, reverse_solutions, unmatched_to
 
 if __name__ == "__main__":
     # Example usage
-    gl_file = os.path.join("data", "gl_new.csv")
-    totals_file = os.path.join("data", "ttl_new.csv")
+    gl_file = os.path.join("data", "fpk_gl.csv")
+    totals_file = os.path.join("data", "fpk_bank.csv")
     max_n = 10
-    output_prefix = os.path.join("data", "results_new_w_voids")
+    output_prefix = os.path.join("data", "fpk_results")
 
-    # Process files in both directions
+    # Parse input files
+    gl_df = parse_csv(gl_file, "GL")
+    totals_df = parse_csv(totals_file, "Bank")
+    print(gl_df.head())
+    # Process DataFrames in both directions
     normal_solutions, reverse_solutions, unmatched_totals, unmatched_gl, voided_groups = process_files_bidirectional(
-        gl_file, totals_file, max_n
+        gl_df, totals_df, max_n
     )
     
     # Print results
@@ -534,5 +562,5 @@ if __name__ == "__main__":
     # Save results
     save_bidirectional_results(
         normal_solutions, reverse_solutions, unmatched_totals, unmatched_gl, voided_groups,
-        output_prefix, max_n, gl_file, totals_file
+        output_prefix, max_n, gl_file, totals_file  # Keep original filenames for reference
     )

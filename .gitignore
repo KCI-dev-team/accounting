@@ -6,3 +6,5 @@ __pycache__/
 venv/
 .DS_Store
 *.xlsx
+bank_rec/data/results*
+bank_rec/data/output_log.txt

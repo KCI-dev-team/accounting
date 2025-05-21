@@ -3,6 +3,8 @@ import json
 from datetime import datetime
 import time
 import os
+import csv
+from itertools import count
 
 def parse_csv(file_path: str, file_type: str) -> pd.DataFrame:
     """
@@ -280,8 +282,7 @@ def process_files_bidirectional(gl_df: pd.DataFrame, totals_df: pd.DataFrame, ma
     # Prepare dataframes for reverse mode
     reverse_gl = remaining_totals.copy()
     reverse_gl = reverse_gl.rename(columns={"Amount": "Net"})
-    if "Control" not in reverse_gl.columns:
-        reverse_gl["Control"] = reverse_gl.index
+    reverse_gl["Control"] = None  # Bank transactions don't have control numbers
     
     reverse_totals = remaining_gl.copy()
     reverse_totals = reverse_totals.rename(columns={"Net": "Amount"})
@@ -296,7 +297,18 @@ def process_files_bidirectional(gl_df: pd.DataFrame, totals_df: pd.DataFrame, ma
     for n_solutions in reverse_solutions_dp.values():
         for key, trans in n_solutions.items():
             if trans:
-                reverse_final_solutions[key] = trans
+                # In reverse mode, the key is (gl_date, gl_amount) and we need to preserve the control
+                gl_date, gl_amount = key
+                gl_control = reverse_totals[
+                    (reverse_totals["Date"] == gl_date) & 
+                    (reverse_totals["Amount"] == gl_amount)
+                ]["Control"].iloc[0]
+                
+                # Create new transactions with the bank amounts and the GL control
+                new_trans = []
+                for bank_date, bank_amount, _ in trans:
+                    new_trans.append((bank_date, bank_amount, gl_control))
+                reverse_final_solutions[key] = new_trans
     
     # Get final unmatched totals and GL items
     matched_in_reverse = set()
@@ -416,9 +428,9 @@ def print_bidirectional_results(normal_solutions, reverse_solutions, unmatched_t
 
 
 def save_bidirectional_results(normal_solutions, reverse_solutions, unmatched_totals, unmatched_gl, 
-                             voided_groups, output_prefix, max_n, gl_file, totals_file):
+                             voided_groups, max_n):
     """
-    Save results from bidirectional matching to JSON files.
+    Process results from bidirectional matching and return DataFrames.
     
     Args:
         normal_solutions (dict): Solutions from normal mode
@@ -426,116 +438,69 @@ def save_bidirectional_results(normal_solutions, reverse_solutions, unmatched_to
         unmatched_totals (list): Unmatched totals
         unmatched_gl (list): Unmatched GL transactions
         voided_groups (list): Voided totals groups
-        output_prefix (str): Prefix for output filenames
         max_n (int): Maximum number of transactions combined
-        gl_file (str): Path to the GL file used
-        totals_file (str): Path to the totals file used
+    
+    Returns:
+        tuple: (reconciliation_df, unmatched_totals_df, unmatched_gl_df, voided_groups_df)
     """
-    # Format normal mode solutions for JSON
-    normal_formatted = {}
-    for (date, amount), trans in normal_solutions.items():
-        date_str = date.strftime("%Y-%m-%d")
-        key = f"{date_str}_{amount}"
-        formatted_transactions = [
-            {
-                "date": trans_date.strftime("%Y-%m-%d"),
-                "amount": float(trans_amount),
-                "control": control,
-            }
-            for trans_date, trans_amount, control in trans
-        ]
-        normal_formatted[key] = {
-            "target_date": date_str,
-            "target_amount": float(amount),
-            "target_source": totals_file,
-            "matching_transactions": formatted_transactions,
-            "transactions_source": gl_file
-        }
-    
-    # Format reverse mode solutions for JSON
-    reverse_formatted = {}
-    for (date, amount), trans in reverse_solutions.items():
-        date_str = date.strftime("%Y-%m-%d")
-        key = f"{date_str}_{amount}"
-        formatted_transactions = [
-            {
-                "date": trans_date.strftime("%Y-%m-%d"),
-                "amount": float(trans_amount),
-                "control": control,
-            }
-            for trans_date, trans_amount, control in trans
-        ]
-        reverse_formatted[key] = {
-            "target_date": date_str,
-            "target_amount": float(amount),
-            "target_source": gl_file,
-            "matching_transactions": formatted_transactions,
-            "transactions_source": totals_file
-        }
-    
-    # Combine both sets of solutions
-    combined_solutions = {**normal_formatted, **reverse_formatted}
-    
-    # Save combined solutions
-    matched_file = f"{output_prefix}_matched_dp_{max_n}_bidirectional.json"
-    with open(matched_file, "w") as f:
-        json.dump(combined_solutions, f, indent=2)
-    print(f"\nCombined matched results saved to '{matched_file}'")
-    
-    # Save unmatched totals
-    unmatched_file = f"{output_prefix}_unmatched_totals_dp_{max_n}.json"
-    with open(unmatched_file, "w") as f:
-        json.dump(
-            [
-                {
-                    "date": date.strftime("%Y-%m-%d"), 
-                    "amount": float(amount),
-                    "source": totals_file
-                }
-                for date, amount in unmatched_totals
-            ],
-            f,
-            indent=2,
-        )
-    print(f"Unmatched totals saved to '{unmatched_file}'")
+    # Create reconciliation rows
+    rows = []
+    recon_id_counter = count(1)
 
-    # Save unmatched GL entries
-    unmatched_gl_file = f"{output_prefix}_unmatched_gl_dp_{max_n}.json"
-    with open(unmatched_gl_file, "w") as f:
-        json.dump(
-            [
-                {
-                    "date": date.strftime("%Y-%m-%d"),
-                    "amount": float(amount),
-                    "control": control,
-                }
-                for date, amount, control in unmatched_gl
-            ],
-            f,
-            indent=2,
-        )
-    print(f"Unmatched GL entries saved to '{unmatched_gl_file}'")
+    # Process normal mode solutions
+    for (bank_date, bank_amount), gl_transactions in normal_solutions.items():
+        if not gl_transactions:
+            continue
+        recon_id = next(recon_id_counter)
+        for gl_date, gl_amount, control in gl_transactions:
+            rows.append({
+                'reconciliation_id': recon_id,
+                'bank_amount': float(bank_amount),
+                'bank_date': bank_date.strftime("%Y-%m-%d"),
+                'gl_amount': float(gl_amount),
+                'gl_date': gl_date.strftime("%Y-%m-%d"),
+                'control': control,
+                'final_value': float(bank_amount)
+            })
 
-    # Save voided totals groups
-    voided_file = f"{output_prefix}_voided_totals_dp_{max_n}.json"
-    voided_formatted = []
-    for group in voided_groups:
-        group_data = {
-            "transactions": [
-                {
-                    "date": date.strftime("%Y-%m-%d"),
-                    "amount": float(amount),
-                    "source": totals_file
-                }
-                for date, amount in group
-            ],
-            "sum": sum(amount for _, amount in group)
-        }
-        voided_formatted.append(group_data)
+    # Process reverse mode solutions
+    for (gl_date, gl_amount), bank_transactions in reverse_solutions.items():
+        if not bank_transactions:
+            continue
+        recon_id = next(recon_id_counter)
+        for bank_date, bank_amount, control in bank_transactions:
+            rows.append({
+                'reconciliation_id': recon_id,
+                'bank_amount': float(bank_amount),
+                'bank_date': bank_date.strftime("%Y-%m-%d"),
+                'gl_amount': float(gl_amount),
+                'gl_date': gl_date.strftime("%Y-%m-%d"),
+                'control': control,
+                'final_value': float(gl_amount)
+            })
+
+    # Create DataFrames
+    reconciliation_df = pd.DataFrame(rows)
     
-    with open(voided_file, "w") as f:
-        json.dump(voided_formatted, f, indent=2)
-    print(f"Voided totals groups saved to '{voided_file}'")
+    # Create unmatched totals DataFrame
+    unmatched_totals_df = pd.DataFrame(
+        [(date.strftime("%Y-%m-%d"), float(amount)) for date, amount in unmatched_totals],
+        columns=['date', 'amount']
+    )
+    
+    # Create unmatched GL entries DataFrame
+    unmatched_gl_df = pd.DataFrame(
+        [(date.strftime("%Y-%m-%d"), float(amount), control) for date, amount, control in unmatched_gl],
+        columns=['date', 'amount', 'control']
+    )
+    
+    # Create voided groups DataFrame
+    voided_rows = []
+    for i, group in enumerate(voided_groups, 1):
+        voided_rows.extend([(i, date.strftime("%Y-%m-%d"), float(amount)) for date, amount in group])
+    voided_groups_df = pd.DataFrame(voided_rows, columns=['group_id', 'date', 'amount'])
+    
+    return reconciliation_df, unmatched_totals_df, unmatched_gl_df, voided_groups_df
 
 
 if __name__ == "__main__":
@@ -560,7 +525,22 @@ if __name__ == "__main__":
     )
     
     # Save results
-    save_bidirectional_results(
-        normal_solutions, reverse_solutions, unmatched_totals, unmatched_gl, voided_groups,
-        output_prefix, max_n, gl_file, totals_file  # Keep original filenames for reference
+    reconciliation_df, unmatched_totals_df, unmatched_gl_df, voided_groups_df = save_bidirectional_results(
+        normal_solutions, reverse_solutions, unmatched_totals, unmatched_gl, voided_groups, max_n
     )
+    
+    # Print reconciliation DataFrame
+    print("\n=== RECONCILIATION DATAFRAME ===")
+    print(reconciliation_df)
+
+    # Print unmatched totals DataFrame
+    print("\n=== UNMATCHED TOTALS DATAFRAME ===")
+    print(unmatched_totals_df)
+
+    # Print unmatched GL entries DataFrame
+    print("\n=== UNMATCHED GL ENTRIES DATAFRAME ===")
+    print(unmatched_gl_df)
+
+    # Print voided groups DataFrame
+    print("\n=== VOIDED GROUPS DATAFRAME ===")
+    print(voided_groups_df)

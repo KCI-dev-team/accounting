@@ -42,9 +42,11 @@ def parse_csv(file_path: str, file_type: str) -> pd.DataFrame:
         # Select and rename required columns
         if "Amount" not in df.columns:
             raise ValueError("Bank file must have an 'Amount' column")
-        
-        # Convert amount to float
-        df["Amount"] = df["Amount"].str.replace(",", "").astype(float)
+        # Convert amount to float if str
+        if df["Amount"].dtype == object:  # Check if Amount is string/object type
+            df["Amount"] = df["Amount"].str.replace(",", "").astype(float)
+        else:
+            df["Amount"] = df["Amount"].astype(float)  # Ensure float type
         # Select final columns
         return df[["Date", "Amount"]]
 

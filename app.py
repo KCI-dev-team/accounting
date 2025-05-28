@@ -42,10 +42,15 @@ def to_excel(df_dict):
 
 
 def main():
-    st.title("Bank File Reconciliation")
+    st.markdown("<h1 style='text-align: center;'>Bank File Reconciliation</h1>", unsafe_allow_html=True)
+    st.markdown("---")
 
-    gl_file = st.file_uploader("Upload GL file", type=["csv", "xlsx"], key="gl_file")
-    totals_file = st.file_uploader("Upload Totals file", type=["csv", "xlsx"], key="totals_file")
+    st.subheader("Upload GL File")
+    gl_file = st.file_uploader("Choose your GL file", type=["csv",], key="gl_file", label_visibility="collapsed")
+    
+    st.subheader("Upload Totals File")
+    totals_file = st.file_uploader("Choose your Totals file", type=["csv"], key="totals_file", label_visibility="collapsed")
+    
     max_n = st.number_input("Max n", min_value=1, value=10, step=1)
 
     run_button = st.button("Run Reconciliation")
@@ -83,7 +88,7 @@ def main():
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             excel_data = to_excel({
                 'Reconciliation': reconciliation_df,
-                'Unmatched Totals': unmatched_totals_df,
+                'Unmatched Bank Activity': unmatched_totals_df,
                 'Unmatched GL': unmatched_gl_df,
                 'Voided Groups': voided_groups_df
             })
